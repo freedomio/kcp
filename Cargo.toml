@@ -1,0 +1,15 @@
+[package]
+name = "kcp"
+version = "0.1.0"
+authors = ["JohnSmithX <dyxushuai@gmail.com>"]
+
+
+description = """
+KCP protocol diffrent from TCP.
+Compare to TCP it can reduce 30% to 40% latency with more 10% to 20% of the bandwidth.
+Fork from https://github.com/skywind3000/kcp
+"""
+
+repository = "https://github.com/freedomio/kcp.rs.git"
+readme = "README.md"
+keywords = ["kcp", "tcp", "fast", "freedomio"]
