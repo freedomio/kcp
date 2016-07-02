@@ -13,3 +13,8 @@ Fork from https://github.com/skywind3000/kcp
 repository = "https://github.com/freedomio/kcp.rs.git"
 readme = "README.md"
 keywords = ["kcp", "tcp", "fast", "freedomio"]
+
+
+[dependencies]
+bytes = "0.3.0"
+byteorder = "0.5.3"
