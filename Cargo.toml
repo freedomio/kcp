@@ -16,5 +16,4 @@ keywords = ["kcp", "tcp", "fast", "freedomio"]
 
 
 [dependencies]
-bytes = "0.3.0"
 byteorder = "0.5.3"

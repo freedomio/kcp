@@ -8,7 +8,7 @@ pub struct Segment {
     pub frg: u8,
     wnd: u16,
     ts: u32,
-    sn: u32,
+    pub sn: u32,
     una: u32,
     resendts: u32,
     rto: u32,

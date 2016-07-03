@@ -1,7 +1,7 @@
 #![allow(dead_code)]
-use byteorder::{LittleEndian, WriteBytesExt};
-use bytes::{MutBuf, ByteBuf, MutByteBuf};
+
 use segment::Segment;
+use std::collections::VecDeque;
 /// all time value is milliseconds
 /// retransmission timeout with no delay but at least 30 ms
 const RTO_NDL: u32 = 30;
@@ -52,7 +52,7 @@ enum Command {
 
 
 #[derive(Default)]
-struct KCP<'k> {
+struct KCP {
     conv: u32,
     mtu: u32,
     mss: u32,
@@ -83,10 +83,10 @@ struct KCP<'k> {
     dead_link: u32,
     incr: u32,
 
-    snd_queue: &'k [Segment],
-    rcv_queue: &'k [Segment],
-    snd_buf: &'k [Segment],
-    rcv_buf: &'k [Segment],
+    snd_queue: VecDeque<Segment>,
+    rcv_queue: VecDeque<Segment>,
+    snd_buf: VecDeque<Segment>,
+    rcv_buf: VecDeque<Segment>,
 
     acklist: Vec<u32>,
     buffer: Vec<u8>,
@@ -96,27 +96,25 @@ struct KCP<'k> {
     output: Option<fn(buf: &mut [u8], size: i32)>,
 }
 
+impl KCP {
+    fn new(conv: u32, output: fn(buf: &mut [u8], size: i32)) -> KCP {
+        let mut kcp = KCP { ..Default::default() };
+        kcp.conv = conv;
+        kcp.snd_wnd = WND_SND;
+        kcp.rcv_wnd = WND_RCV;
+        kcp.rmt_wnd = WND_RCV;
+        kcp.mtu = MTU_DEF;
+        kcp.mss = kcp.mtu - OVERHEAD;
+        kcp.rx_rto = RTO_DEF;
+        kcp.rx_minrto = RTO_MIN;
+        kcp.interval = INTERVAL;
+        kcp.ts_flush = INTERVAL;
+        kcp.ssthresh = THRESH_INIT;
+        kcp.dead_link = DEADLINK;
+        kcp.output = Some(output);
+        return kcp;
+    }
 
-
-fn new_kcp<'k>(conv: u32, output: fn(buf: &mut [u8], size: i32)) -> KCP<'k> {
-    let mut kcp = KCP { ..Default::default() };
-    kcp.conv = conv;
-    kcp.snd_wnd = WND_SND;
-    kcp.rcv_wnd = WND_RCV;
-    kcp.rmt_wnd = WND_RCV;
-    kcp.mtu = MTU_DEF;
-    kcp.mss = kcp.mtu - OVERHEAD;
-    kcp.rx_rto = RTO_DEF;
-    kcp.rx_minrto = RTO_MIN;
-    kcp.interval = INTERVAL;
-    kcp.ts_flush = INTERVAL;
-    kcp.ssthresh = THRESH_INIT;
-    kcp.dead_link = DEADLINK;
-    kcp.output = Some(output);
-    return kcp;
-}
-
-impl<'k> KCP<'k> {
     fn peek_size(&self) -> i32 {
         if self.rcv_queue.len() == 0 {
             return -1;
@@ -132,7 +130,7 @@ impl<'k> KCP<'k> {
         }
 
         let mut length: i32 = 0;
-        for segment in self.rcv_queue {
+        for seg in &self.rcv_queue {
             length += seg.data.len() as i32;
             if seg.frg == 0 {
                 break;
@@ -140,7 +138,8 @@ impl<'k> KCP<'k> {
         }
         return length;
     }
-    fn recv(&mut self, &buffer: Vec<u8>) -> i32 {
+
+    fn recv(&mut self, buffer: &mut Vec<u8>) -> i32 {
         if self.rcv_queue.len() == 0 {
             return -1;
         }
@@ -148,40 +147,53 @@ impl<'k> KCP<'k> {
         if size < 0 {
             return -2;
         }
-        if size > buffer.len() as i32 {
+        if size > buffer.capacity() as i32 {
             return -3;
         }
-        let mut fast_recover: bool;
+        let mut fast_recover = false;
         if self.rcv_queue.len() >= self.rcv_wnd as usize {
             fast_recover = true;
         }
-        let mut count = 0;
-        for seg in self.rcv_queue {
-            buffer.clone_from(&seg.data);
-            buffer = Vec::<u8>::from(&buffer[seg.data.len()..]);
-            count += 1;
-            if seg.frg == 0 {
-                break;
+        let mut num = 0;
+        loop {
+            match self.rcv_queue.pop_front() {
+                Some(ref mut seg) => {
+                    buffer.append(&mut seg.data);
+                    num += seg.data.len() as i32;
+                    if seg.frg == 0 {
+                        break;
+                    }
+                }
+                None => break,
             }
 
         }
-        // self.rcv_queue = &self.rcv_queue[count..];
-        self.rcv_queue = &self.rcv_queue[count..];
+        loop {
+            match self.rcv_buf.pop_front() {
+                Some(seg) => {
+                    if seg.sn == self.rcv_nxt && self.rcv_queue.len() < self.rcv_wnd as usize {
+                        self.rcv_queue.push_back(seg);
+                        self.rcv_nxt += 1;
+                    }
+                }
+                None => break,
+            }
+        }
         if self.rcv_queue.len() < self.rcv_wnd as usize && fast_recover {
             self.probe |= ASK_TELL;
         }
-
-
-        return -1;
+        return num;
     }
 }
 
 fn output(buf: &mut [u8], size: i32) {
     println!("this is output test fn");
+	println!("buf: {:?}, size: {:?}", buf, size);
 }
+
 #[test]
 fn newKCP_test() {
-    let kcp = new_kcp(22, output);
+    let kcp = KCP::new(22, output);
     assert!(kcp.conv == 22);
     assert!(kcp.snd_wnd == WND_SND);
     assert!(kcp.rcv_wnd == WND_RCV);
