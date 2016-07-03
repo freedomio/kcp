@@ -83,10 +83,10 @@ struct KCP<'k> {
     dead_link: u32,
     incr: u32,
 
-    snd_queue: &'k[Segment],
-    rcv_queue: &'k[Segment],
-    snd_buf: &'k[Segment],
-    rcv_buf: &'k[Segment],
+    snd_queue: &'k [Segment],
+    rcv_queue: &'k [Segment],
+    snd_buf: &'k [Segment],
+    rcv_buf: &'k [Segment],
 
     acklist: &'k [u32],
     buffer: Option<MutByteBuf>,
@@ -98,7 +98,7 @@ struct KCP<'k> {
 
 
 
-fn newKCP<'k>(conv: u32, output: fn(buf: &mut [u8], size: i32)) -> KCP<'k> {
+fn new_kcp<'k>(conv: u32, output: fn(buf: &mut [u8], size: i32)) -> KCP<'k> {
     let mut kcp = KCP { ..Default::default() };
     kcp.conv = conv;
     kcp.snd_wnd = WND_SND;
@@ -115,4 +115,86 @@ fn newKCP<'k>(conv: u32, output: fn(buf: &mut [u8], size: i32)) -> KCP<'k> {
     kcp.dead_link = DEADLINK;
     kcp.output = Some(output);
     return kcp;
+}
+
+impl<'k> KCP<'k> {
+    fn peek_size(&self) -> i32 {
+        if self.rcv_queue.len() == 0 {
+            return -1;
+        }
+
+        let seg = &self.rcv_queue[0];
+        if seg.frg == 0 {
+            match seg.data {
+                Some(ref data) => return data.capacity() as i32,
+                None => return -1,
+            }
+        }
+
+        if self.rcv_queue.len() < (seg.frg as usize) {
+            return -1;
+        }
+
+        let mut length: i32 = 0;
+        for segment in self.rcv_queue {
+            match segment.data {
+                Some(ref data) => length += data.capacity() as i32,
+                None => length += 0,
+            }
+            // length += segment.dalen();
+            if seg.frg == 0 {
+                break;
+            }
+        }
+        return length;
+    }
+    fn recv(&self, buffer: ByteBuf) -> i32 {
+        if self.rcv_queue.len() == 0 {
+            return -1;
+        }
+        let size = self.peek_size();
+        if size < 0 {
+            return -2;
+        }
+        if size > buffer.capacity() as i32 {
+            return -3;
+        }
+        let fast_recover: bool;
+        if self.rcv_queue.len() >= self.rcv_wnd as usize {
+            fast_recover = true;
+        }
+        let count = 0;
+        for seg in self.rcv_queue {
+            match seg.data {
+                Some(ref data) => buffer = data,
+                None => return -1,
+            }
+
+        }
+
+
+
+        return -1;
+    }
+}
+
+fn output(buf: &mut [u8], size: i32) {
+    println!("this is output test fn");
+}
+#[test]
+fn newKCP_test() {
+    let kcp = new_kcp(22, output);
+    assert!(kcp.conv == 22);
+    assert!(kcp.snd_wnd == WND_SND);
+    assert!(kcp.rcv_wnd == WND_RCV);
+    assert!(kcp.rmt_wnd == WND_RCV);
+    assert!(kcp.mtu == MTU_DEF);
+    assert!(kcp.mss == kcp.mtu - OVERHEAD);
+    // kcp.buffer = Some(ByteBuf::mut_with_capacity(100));
+    assert!(kcp.rx_rto == RTO_DEF);
+    assert!(kcp.rx_minrto == RTO_MIN);
+    assert!(kcp.interval == INTERVAL);
+    assert!(kcp.ts_flush == INTERVAL);
+    assert!(kcp.ssthresh == THRESH_INIT);
+    assert!(kcp.dead_link == DEADLINK);
 }
