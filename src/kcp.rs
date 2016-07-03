@@ -88,8 +88,8 @@ struct KCP<'k> {
     snd_buf: &'k [Segment],
     rcv_buf: &'k [Segment],
 
-    acklist: &'k [u32],
-    buffer: Option<MutByteBuf>,
+    acklist: Vec<u32>,
+    buffer: Vec<u8>,
     fastresend: i32,
     nocwnd: i32,
     logmask: i32,
@@ -106,7 +106,6 @@ fn new_kcp<'k>(conv: u32, output: fn(buf: &mut [u8], size: i32)) -> KCP<'k> {
     kcp.rmt_wnd = WND_RCV;
     kcp.mtu = MTU_DEF;
     kcp.mss = kcp.mtu - OVERHEAD;
-    kcp.buffer = Some(ByteBuf::mut_with_capacity(100));
     kcp.rx_rto = RTO_DEF;
     kcp.rx_minrto = RTO_MIN;
     kcp.interval = INTERVAL;
@@ -125,10 +124,7 @@ impl<'k> KCP<'k> {
 
         let seg = &self.rcv_queue[0];
         if seg.frg == 0 {
-            match seg.data {
-                Some(ref data) => return data.capacity() as i32,
-                None => return -1,
-            }
+            return seg.data.len() as i32;
         }
 
         if self.rcv_queue.len() < (seg.frg as usize) {
@@ -137,18 +133,14 @@ impl<'k> KCP<'k> {
 
         let mut length: i32 = 0;
         for segment in self.rcv_queue {
-            match segment.data {
-                Some(ref data) => length += data.capacity() as i32,
-                None => length += 0,
-            }
-            // length += segment.dalen();
+            length += seg.data.len() as i32;
             if seg.frg == 0 {
                 break;
             }
         }
         return length;
     }
-    fn recv(&self, buffer: ByteBuf) -> i32 {
+    fn recv(&mut self, &buffer: Vec<u8>) -> i32 {
         if self.rcv_queue.len() == 0 {
             return -1;
         }
@@ -156,22 +148,28 @@ impl<'k> KCP<'k> {
         if size < 0 {
             return -2;
         }
-        if size > buffer.capacity() as i32 {
+        if size > buffer.len() as i32 {
             return -3;
         }
-        let fast_recover: bool;
+        let mut fast_recover: bool;
         if self.rcv_queue.len() >= self.rcv_wnd as usize {
             fast_recover = true;
         }
-        let count = 0;
+        let mut count = 0;
         for seg in self.rcv_queue {
-            match seg.data {
-                Some(ref data) => buffer = data,
-                None => return -1,
+            buffer.clone_from(&seg.data);
+            buffer = Vec::<u8>::from(&buffer[seg.data.len()..]);
+            count += 1;
+            if seg.frg == 0 {
+                break;
             }
 
         }
-
+        // self.rcv_queue = &self.rcv_queue[count..];
+        self.rcv_queue = &self.rcv_queue[count..];
+        if self.rcv_queue.len() < self.rcv_wnd as usize && fast_recover {
+            self.probe |= ASK_TELL;
+        }
 
 
         return -1;

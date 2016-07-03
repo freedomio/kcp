@@ -1,6 +1,5 @@
 #![allow(dead_code)]
 use byteorder::{LittleEndian, WriteBytesExt};
-use bytes::{MutBuf, ByteBuf, MutByteBuf};
 
 #[derive(Default, Debug)]
 pub struct Segment {
@@ -15,15 +14,19 @@ pub struct Segment {
     rto: u32,
     fastack: u32,
     xmit: u32,
-    pub data: Option<ByteBuf>,
+    pub data: Vec<u8>,
 }
 
 impl Segment {
-    pub fn fill_data(&mut self, bytes: &[u8]) {
-        self.data = Some(ByteBuf::from_slice(bytes));
+    pub fn new() -> Segment {
+        Default::default()
     }
 
-    pub fn encode(&self, buf: &mut MutByteBuf) {
+    pub fn write_bytes(&mut self, bytes: &[u8]) {
+        self.data = Vec::from(bytes);
+    }
+
+    pub fn encode(&self, buf: &mut Vec<u8>) {
         buf.write_u32::<LittleEndian>(self.conv).unwrap();
         buf.write_u8(self.cmd).unwrap();
         buf.write_u8(self.frg).unwrap();
@@ -31,11 +34,7 @@ impl Segment {
         buf.write_u32::<LittleEndian>(self.ts).unwrap();
         buf.write_u32::<LittleEndian>(self.sn).unwrap();
         buf.write_u32::<LittleEndian>(self.una).unwrap();
-        let len = match self.data {
-            Some(ref b) => b.capacity(),
-            None => 0,
-        };
-        buf.write_u32::<LittleEndian>(len as u32).unwrap();
+        buf.write_u32::<LittleEndian>(self.data.len() as u32).unwrap();
     }
 }
 
@@ -43,10 +42,10 @@ impl Segment {
 pub fn test_segment_encode() {
     // let mut seg = Segment { data: Some(ByteBuf::mut_with_capacity(100)), ..Default::default() };
     let mut seg: Segment = Default::default();
-    seg.fill_data(&[8, 8, 8, 8]);
+    seg.write_bytes(&[8, 8, 8, 8]);
     seg.conv = 4;
-    let mut buf = ByteBuf::mut_with_capacity(100);
+ let mut buf = Vec::<u8>::with_capacity(100);
     seg.encode(&mut buf);
-    assert!(buf.bytes() ==
+    assert!(buf ==
             &[4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0]);
 }
