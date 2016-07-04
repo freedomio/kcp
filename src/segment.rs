@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-use byteorder::{LittleEndian, WriteBytesExt};
+use bytebuffer::ByteBuffer;
 
 #[derive(Default, Debug)]
 pub struct Segment {
@@ -18,7 +18,7 @@ pub struct Segment {
 }
 
 impl Segment {
-    pub fn new() -> Segment {
+    pub fn new() -> Self {
         Default::default()
     }
 
@@ -26,15 +26,15 @@ impl Segment {
         self.data = Vec::from(bytes);
     }
 
-    pub fn encode(&self, buf: &mut Vec<u8>) {
-        buf.write_u32::<LittleEndian>(self.conv).unwrap();
-        buf.write_u8(self.cmd).unwrap();
-        buf.write_u8(self.frg).unwrap();
-        buf.write_u16::<LittleEndian>(self.wnd).unwrap();
-        buf.write_u32::<LittleEndian>(self.ts).unwrap();
-        buf.write_u32::<LittleEndian>(self.sn).unwrap();
-        buf.write_u32::<LittleEndian>(self.una).unwrap();
-        buf.write_u32::<LittleEndian>(self.data.len() as u32).unwrap();
+    pub fn encode(&self, buf: &mut ByteBuffer) {
+        buf.write_u32(self.conv);
+        buf.write_u8(self.cmd);
+        buf.write_u8(self.frg);
+        buf.write_u16(self.wnd);
+        buf.write_u32(self.ts);
+        buf.write_u32(self.sn);
+        buf.write_u32(self.una);
+        buf.write_u32(self.data.len() as u32);
     }
 }
 
@@ -44,8 +44,7 @@ pub fn test_segment_encode() {
     let mut seg: Segment = Default::default();
     seg.write_bytes(&[8, 8, 8, 8]);
     seg.conv = 4;
- let mut buf = Vec::<u8>::with_capacity(100);
+	let mut buf = ByteBuffer::new();
     seg.encode(&mut buf);
-    assert!(buf ==
-            &[4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 0, 0]);
+    assert!(buf.to_bytes() == [0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4]);
 }

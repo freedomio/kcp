@@ -184,15 +184,22 @@ impl KCP {
         }
         return num;
     }
+
+	fn ack_push(&mut self, sn: u32, ts: u32) {
+		self.acklist.push(sn);
+		self.acklist.push(ts);
+	}
+
+	//fn ack_get(&self, p: i32) 
 }
 
 fn output(buf: &mut [u8], size: i32) {
     println!("this is output test fn");
-	println!("buf: {:?}, size: {:?}", buf, size);
+    println!("buf: {:?}, size: {:?}", buf, size);
 }
 
 #[test]
-fn newKCP_test() {
+fn test_kcp() {
     let kcp = KCP::new(22, output);
     assert!(kcp.conv == 22);
     assert!(kcp.snd_wnd == WND_SND);
