@@ -3,6 +3,7 @@
 use segment::Segment;
 use std::collections::VecDeque;
 use buf::ByteBuffer;
+use std::cmp::{min, max};
 /// all time value is milliseconds
 /// retransmission timeout with no delay but at least 30 ms
 const RTO_NDL: u32 = 30;
@@ -51,7 +52,7 @@ const CMD_WINS: u32 = 84;
 
 
 #[derive(Default)]
-struct KCP {
+pub struct KCP {
     conv: u32,
     mtu: u32,
     mss: u32,
@@ -96,7 +97,7 @@ struct KCP {
 }
 
 impl KCP {
-    fn new(conv: u32, output: fn(buf: &mut ByteBuffer)) -> Self {
+    pub fn new(conv: u32, output: fn(buf: &mut ByteBuffer)) -> Self {
         let mut kcp = KCP { ..Default::default() };
         kcp.conv = conv;
         kcp.snd_wnd = WND_SND;
@@ -115,7 +116,7 @@ impl KCP {
         return kcp;
     }
 
-    fn peek_size(&self) -> i32 {
+    pub fn peek_size(&self) -> i32 {
         if self.rcv_queue.len() == 0 {
             return -1;
         }
@@ -139,7 +140,7 @@ impl KCP {
         return length;
     }
 
-    fn recv(&mut self, buffer: &mut Vec<u8>) -> i32 {
+    pub fn recv(&mut self, buffer: &mut Vec<u8>) -> i32 {
         if self.rcv_queue.len() == 0 {
             return -1;
         }
@@ -183,6 +184,137 @@ impl KCP {
             self.probe |= ASK_TELL;
         }
         return num;
+    }
+
+    pub fn send(&mut self, buffer: &mut ByteBuffer) -> i32 {
+        if buffer.len() == 0 {
+            return -1;
+        }
+        let mut count = if buffer.len() < self.mss as usize {
+            1
+        } else {
+            buffer.len() as i32 + self.mss as i32 - 1 / self.mss as i32
+        };
+        if count > 255 {
+            return -2;
+        }
+        if count == 0 {
+            count = 1;
+        }
+        for i in (0..count) {
+            let size = if buffer.len() > self.mss as usize {
+                self.mss
+            } else {
+                buffer.len() as u32
+            };
+            let mut seg = Segment::new();
+            seg.data = buffer.read_bytes(size as usize);
+            seg.frg = count as u32 - i as u32 - 1;
+            self.snd_queue.push_back(seg);
+        }
+        return 0;
+    }
+
+    pub fn input(&mut self, data: &mut ByteBuffer) -> i32 {
+        let una = self.snd_una;
+        if data.len() < OVERHEAD as usize {
+            return -1;
+        }
+        let mut maxack: u32 = 0;
+        let mut flag: i32 = 0;
+
+        loop {
+            let (ts, sn, length, una, conv): (u32, u32, u32, u32, u32);
+            let wnd: u16;
+            let (cmd, frg): (u8, u8);
+            if data.len() < OVERHEAD as usize {
+                break;
+            }
+            conv = data.read_u32();
+            if conv != self.conv {
+                return -1;
+            }
+            cmd = data.read_u8();
+            frg = data.read_u8();
+            wnd = data.read_u16();
+            ts = data.read_u32();
+            sn = data.read_u32();
+            una = data.read_u32();
+            length = data.read_u32();
+            if data.len() < length as usize {
+                return -2;
+            }
+            if cmd != CMD_PUSH as u8 && cmd != CMD_ACK as u8 && cmd != CMD_WASK as u8 &&
+               cmd != CMD_WINS as u8 {
+                return -3;
+            }
+            self.rmt_wnd = wnd as u32;
+            self.parse_una(una);
+            self.shrink_buf();
+
+            if cmd as u32 == CMD_ACK {
+                if self.current >= ts {
+					let rtt = self.current - ts;
+                    self.update_ack(rtt);
+                }
+                self.parse_ack(sn);
+                self.shrink_buf();
+                if flag == 0 {
+                    flag = 1;
+                    maxack = sn;
+                } else if sn > maxack {
+                    maxack = sn;
+                }
+            } else if cmd as u32 == CMD_PUSH {
+                if sn >= (self.rcv_nxt + self.rcv_wnd) {
+                    self.ack_push(sn, ts);
+                    if sn >= self.rcv_nxt {
+                        let mut seg = Segment::new();
+                        seg.conv = conv;
+                        seg.cmd = cmd as u32;
+                        seg.frg = frg as u32;
+                        seg.wnd = wnd as u32;
+                        seg.ts = ts as u32;
+                        seg.sn = sn;
+                        seg.una = una;
+                        seg.data = data.read_bytes(length as usize);
+                        self.parse_data(seg);
+                    }
+                }
+            } else if cmd as u32 == CMD_WASK {
+                self.probe |= ASK_TELL;
+            } else if cmd as u32 == CMD_WINS {
+
+            } else {
+                return -3;
+            }
+        }
+        if flag != 0 {
+            self.parse_fastack(maxack);
+        }
+
+        if self.snd_una >= una {
+            if self.cwnd < self.rmt_wnd {
+                let mss = self.mss;
+                if self.cwnd < self.ssthresh {
+                    self.cwnd += 1;
+                    self.incr += mss;
+                } else {
+                    if self.incr < mss {
+                        self.incr = mss;
+                    }
+                    self.incr += (mss * mss) / self.incr + (mss / 16);
+                    if (self.cwnd + 1) * mss <= self.incr {
+                        self.cwnd += 1;
+                    }
+                }
+                if self.cwnd > self.rmt_wnd {
+                    self.cwnd = self.rmt_wnd;
+                    self.incr = self.rmt_wnd * mss;
+                }
+            }
+        }
+        return 0;
     }
 
     fn ack_push(&mut self, sn: u32, ts: u32) {
@@ -290,136 +422,28 @@ impl KCP {
         }
 
     }
-    fn send(&mut self, buffer: &mut ByteBuffer) -> i32 {
-        if buffer.len() == 0 {
-            return -1;
-        }
-        let mut count = if buffer.len() < self.mss as usize {
-            1
+
+    fn shrink_buf(&mut self) {
+        if let Some(seg) = self.snd_buf.get(0) {
+            self.snd_una = seg.sn;
         } else {
-            buffer.len() as i32 + self.mss as i32 - 1 / self.mss as i32
-        };
-        if count > 255 {
-            return -2;
+            self.snd_una = self.snd_nxt;
         }
-        if count == 0 {
-            count = 1;
-        }
-        for i in (0..count) {
-            let size = if buffer.len() > self.mss as usize {
-                self.mss
-            } else {
-                buffer.len() as u32
-            };
-            let mut seg = Segment::new();
-            seg.data = buffer.read_bytes(size as usize);
-            seg.frg = count as u32 - i as u32 - 1;
-            self.snd_queue.push_back(seg);
-        }
-        return 0;
     }
-    fn input(&mut self, data: &mut ByteBuffer) -> i32 {
-        let una = self.snd_una;
-        if data.len() < OVERHEAD as usize {
-            return -1;
-        }
-        let mut maxack: u32 = 0;
-        let mut flag: i32 = 0;
 
-        loop {
-            let (ts, sn, length, una, conv): (u32, u32, u32, u32, u32);
-            let wnd: u16;
-            let (cmd, frg): (u8, u8);
-            if data.len() < OVERHEAD as usize {
-                break;
-            }
-            conv = data.read_u32();
-            if conv != self.conv {
-                return -1;
-            }
-            cmd = data.read_u8();
-            frg = data.read_u8();
-            wnd = data.read_u16();
-            ts = data.read_u32();
-            sn = data.read_u32();
-            una = data.read_u32();
-            length = data.read_u32();
-            if data.len() < length as usize {
-                return -2;
-            }
-            if cmd != CMD_PUSH as u8 && cmd != CMD_ACK as u8 && cmd != CMD_WASK as u8 &&
-               cmd != CMD_WINS as u8 {
-                return -3;
-            }
-            self.rmt_wnd = wnd as u32;
-            self.parse_una(una);
-            self.shrink_buf();
-
-            if cmd as u32 == CMD_ACK {
-                if self.current >= ts {
-                    self.update_ack((self.current - ts) as i32)
-                }
-                self.parse_ack(sn);
-                self.shrink_buf();
-                if flag == 0 {
-                    flag = 1;
-                    maxack = sn;
-                } else if sn > maxack {
-                    maxack = sn;
-                }
-            } else if cmd as u32 == CMD_PUSH {
-                if sn >= (self.rcv_nxt + self.rcv_wnd) {
-                    self.ack_push(sn, ts);
-                    if sn >= self.rcv_nxt {
-                        let mut seg = Segment::new();
-                        seg.conv = conv;
-                        seg.cmd = cmd as u32;
-                        seg.frg = frg as u32;
-                        seg.wnd = wnd as u32;
-                        seg.ts = ts as u32;
-                        seg.sn = sn;
-                        seg.una = una;
-                        seg.data = data.read_bytes(length as usize);
-                        self.parse_data(seg);
-                    }
-                }
-            } else if cmd as u32 == CMD_WASK {
-                self.probe |= ASK_TELL;
-            } else if cmd as u32 == CMD_WINS {
-
-            } else {
-                return -3;
-            }
+    fn update_ack(&mut self, rtt: u32) {
+        let rto = 0u32;
+        if self.rx_srtt == 0 {
+            self.rx_srtt = rtt;
+            self.rx_rttval = rtt / 2;
+        } else {
+            self.rx_rttval = (self.rx_rttval * 3 + max(self.rx_srtt, rtt) -
+                              min(self.rx_srtt, rtt)) / 4;
+            self.rx_srtt = max((self.rx_srtt * 7 + rtt) / 8, 1);
         }
-        if flag != 0 {
-            self.parse_fastack(maxack);
-        }
-
-        if self.snd_una >= una {
-            if self.cwnd < self.rmt_wnd {
-                let mss = self.mss;
-                if self.cwnd < self.ssthresh {
-                    self.cwnd += 1;
-                    self.incr += mss;
-                } else {
-                    if self.incr < mss {
-                        self.incr = mss;
-                    }
-                    self.incr += (mss * mss) / self.incr + (mss / 16);
-                    if (self.cwnd + 1) * mss <= self.incr {
-                        self.cwnd += 1;
-                    }
-                }
-                if self.cwnd > self.rmt_wnd {
-                    self.cwnd = self.rmt_wnd;
-                    self.incr = self.rmt_wnd * mss;
-                }
-            }
-        }
-        return 0;
+        self.rx_rto = min(max(self.rx_minrto, (self.rx_srtt + max(1, self.rx_rttval * 4))),
+                          RTO_MAX);
     }
-    fn shrink_buf(&self) {}
-    fn update_ack(&self, rtt: i32) {}
 }
 
 fn output(buf: &mut ByteBuffer) {
