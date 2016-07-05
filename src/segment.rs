@@ -7,7 +7,7 @@ pub struct Segment {
     pub cmd: u32,
     pub frg: u32,
     pub wnd: u32,
-    ts: u32,
+    pub ts: u32,
     pub sn: u32,
     pub una: u32,
     resendts: u32,
@@ -18,12 +18,12 @@ pub struct Segment {
 }
 
 impl Segment {
-	pub fn new() -> Self {
-		Default::default()
-	}
+    pub fn new() -> Self {
+        Default::default()
+    }
 
     pub fn with_capacity_zeroed(cap: usize) -> Self {
-		Segment {data: vec![0;cap], ..Default::default()}
+        Segment { data: vec![0;cap], ..Default::default() }
     }
 
     pub fn write_bytes(&mut self, bytes: &[u8]) {
@@ -48,8 +48,9 @@ pub fn test_segment_encode() {
     let mut seg: Segment = Default::default();
     seg.write_bytes(&[8, 8, 8, 8]);
     seg.conv = 4;
-	let mut buf = ByteBuffer::new();
+    let mut buf = ByteBuffer::new();
     seg.encode(&mut buf);
-	println!("{:?}", buf.to_bytes());
-    assert!(buf.to_bytes() == [0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4]);
+    println!("{:?}", buf.to_bytes());
+    assert!(buf.to_bytes() ==
+            [0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4]);
 }
