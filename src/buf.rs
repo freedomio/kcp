@@ -65,7 +65,7 @@ impl ByteBuffer {
         self.rpos = 0;
     }
 
-
+    // write opretions
 
     /// Append a byte array to the buffer. The buffer is automatically extended if needed
     pub fn write_bytes(&mut self, bytes: &[u8]) {
@@ -258,7 +258,7 @@ impl ByteBuffer {
     }
 
     /// Return the position of the reading cursor
-    pub fn get_rpos(&mut self) -> usize {
+    pub fn get_rpos(&self) -> usize {
         self.rpos
     }
 
@@ -269,7 +269,7 @@ impl ByteBuffer {
     }
 
     /// Return the writing cursor position
-    pub fn get_wpos(&mut self) -> usize {
+    pub fn get_wpos(&self) -> usize {
         self.wpos
     }
 
