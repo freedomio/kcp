@@ -2,6 +2,7 @@
 
 use segment::Segment;
 use std::collections::VecDeque;
+use buf::ByteBuffer;
 /// all time value is milliseconds
 /// retransmission timeout with no delay but at least 30 ms
 const RTO_NDL: u32 = 30;
@@ -39,16 +40,14 @@ const PROBE_INIT: u32 = 7000;
 const PROBE_LIMIT: u32 = 120000;
 
 
-enum Command {
-    /// Push send the packet
-    Push,
-    /// Ack the packet
-    Ack,
-    /// Wask the cmd is ask about the other side to get the window's size
-    Wask,
-    /// Wins tell the other side the size of window
-    Wins,
-}
+/// Push send the packet
+const CMD_PUSH: u32 = 81;
+/// Ack the packet
+const CMD_ACK: u32 = 82;
+/// Wask the cmd is ask about the other side to get the window's size
+const CMD_WASK: u32 = 83;
+/// Wins tell the other side the size of window
+const CMD_WINS: u32 = 84;
 
 
 #[derive(Default)]
@@ -89,15 +88,15 @@ struct KCP {
     rcv_buf: VecDeque<Segment>,
 
     acklist: Vec<u32>,
-    buffer: Vec<u8>,
+    buffer: Option<ByteBuffer>,
     fastresend: i32,
     nocwnd: i32,
     logmask: i32,
-    output: Option<fn(buf: &mut [u8], size: i32)>,
+    output: Option<fn(buf: &mut ByteBuffer)>,
 }
 
 impl KCP {
-    fn new(conv: u32, output: fn(buf: &mut [u8], size: i32)) -> KCP {
+    fn new(conv: u32, output: fn(buf: &mut ByteBuffer)) -> Self {
         let mut kcp = KCP { ..Default::default() };
         kcp.conv = conv;
         kcp.snd_wnd = WND_SND;
@@ -111,6 +110,7 @@ impl KCP {
         kcp.ts_flush = INTERVAL;
         kcp.ssthresh = THRESH_INIT;
         kcp.dead_link = DEADLINK;
+        kcp.buffer = Some(ByteBuffer::new());
         kcp.output = Some(output);
         return kcp;
     }
@@ -185,17 +185,116 @@ impl KCP {
         return num;
     }
 
-	fn ack_push(&mut self, sn: u32, ts: u32) {
-		self.acklist.push(sn);
-		self.acklist.push(ts);
-	}
+    fn ack_push(&mut self, sn: u32, ts: u32) {
+        self.acklist.push(sn);
+        self.acklist.push(ts);
+    }
 
-	//fn ack_get(&self, p: i32) 
+    fn ack_get(&self, p: i32) -> (u32, u32) {
+        (self.acklist[(p * 2) as usize], self.acklist[(p * 2 + 2) as usize])
+    }
+
+    fn parse_data(&mut self, new_seg: Segment) {
+        let sn = new_seg.sn;
+        if sn >= (self.rcv_nxt + self.rcv_wnd) || sn < self.rcv_nxt {
+            // TODO: need process
+            return;
+        }
+        for i in (0..self.rcv_buf.len()).rev() {
+            if self.rcv_buf[i].sn == sn {
+                break;
+            }
+            if sn - self.rcv_buf[i].sn > 0 {
+                self.rcv_buf.insert(i + 1, new_seg);
+                break;
+            }
+        }
+        loop {
+            match self.rcv_buf.pop_front() {
+                Some(seg) => {
+                    if seg.sn == self.rcv_nxt && (self.rcv_queue.len() as u32) < self.rcv_wnd {
+                        self.rcv_queue.push_back(seg);
+                        self.rcv_nxt += 1;
+                    } else {
+                        break;
+                    }
+                }
+                None => break,
+            }
+        }
+    }
+
+    fn parse_ack(&mut self, sn: u32) {
+        if sn < self.snd_una || sn >= self.snd_nxt {
+            return;
+        }
+        for i in 0..self.snd_buf.len() {
+            if sn == self.snd_buf[i].sn {
+                self.snd_buf.remove(i);
+                break;
+            }
+            if sn < self.snd_buf[i].sn {
+                break;
+            }
+        }
+    }
+
+    fn parse_fastack(&mut self, sn: u32) {
+        if sn < self.snd_una || sn >= self.snd_nxt {
+            return;
+        }
+        for seg in &mut self.snd_buf {
+            if sn != seg.sn {
+                seg.fastack += 1;
+            } else {
+                break;
+            }
+        }
+    }
+
+    fn parse_una(&mut self, una: u32) {
+        for i in 0..self.snd_buf.len() {
+            if una > self.snd_buf[i].sn {
+                self.snd_buf.remove(i);
+                break;
+            }
+            break;
+        }
+    }
+
+    fn wnd_unused(&mut self) -> u32 {
+        if self.rcv_queue.len() < self.rcv_wnd as usize {
+            return self.rcv_wnd - self.rcv_queue.len() as u32;
+        }
+        0
+    }
+
+    fn flush(&mut self) {
+        if self.updated == 0 {
+            return;
+        }
+        let (current, change, lost) = (self.current, 0, false);
+        let mut seg = Segment::new();
+        seg.conv = self.conv;
+        seg.cmd = CMD_ACK;
+        seg.wnd = self.wnd_unused();
+        seg.una = self.rcv_nxt;
+        if let Some(ref mut buffer) = self.buffer {
+            for _ in 0..self.acklist.len() / 2 {
+                {
+                    if let Some(output) = self.output {
+                        output(buffer);
+                    }
+                }
+            }
+        }
+
+    }
 }
 
-fn output(buf: &mut [u8], size: i32) {
+fn output(buf: &mut ByteBuffer) {
     println!("this is output test fn");
-    println!("buf: {:?}, size: {:?}", buf, size);
+    println!("buf: {:?}, size: {:?}", buf.to_bytes(), buf.get_rpos());
 }
 
 #[test]
