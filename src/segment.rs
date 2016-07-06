@@ -10,10 +10,10 @@ pub struct Segment {
     pub ts: u32,
     pub sn: u32,
     pub una: u32,
-    resendts: u32,
-    rto: u32,
+    pub resendts: u32,
+    pub rto: u32,
     pub fastack: u32,
-    xmit: u32,
+    pub xmit: u32,
     pub data: Vec<u8>,
 }
 
@@ -26,19 +26,25 @@ impl Segment {
         Segment { data: vec![0;cap], ..Default::default() }
     }
 
-    pub fn write_bytes(&mut self, bytes: &[u8]) {
-        self.data = Vec::from(bytes);
-    }
+	pub fn from_bytes(bytes: &[u8]) -> Self {
+		let mut seg = Segment::new();
+		seg.data = Vec::from(bytes);
+		seg
+	}
 
     pub fn encode(&self, buf: &mut ByteBuffer) {
-        buf.write_u32(self.conv);
-        buf.write_u8(self.cmd as u8);
-        buf.write_u8(self.frg as u8);
-        buf.write_u16(self.wnd as u16);
-        buf.write_u32(self.ts);
-        buf.write_u32(self.sn);
-        buf.write_u32(self.una);
-        buf.write_u32(self.data.len() as u32);
+        buf.write_u32(self.conv).unwrap();
+        buf.write_u8(self.cmd as u8).unwrap();
+        buf.write_u8(self.frg as u8).unwrap();
+        buf.write_u16(self.wnd as u16).unwrap();
+        buf.write_u32(self.ts).unwrap();
+        buf.write_u32(self.sn).unwrap();
+        buf.write_u32(self.una).unwrap();
+        buf.write_u32(self.data.len() as u32).unwrap();
+    }
+
+    pub fn data_bytes(&self) -> Vec<u8> {
+        self.data.to_vec()
     }
 }
 
