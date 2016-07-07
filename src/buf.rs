@@ -1,7 +1,6 @@
 #![allow(dead_code)]
 use byteorder::{ByteOrder, LittleEndian};
 use std::io::Write;
-use std::cmp::{min, max};
 
 #[derive(Clone,Copy,Debug)]
 pub enum BufferResult {

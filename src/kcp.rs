@@ -657,6 +657,7 @@ impl KCP {
                 } else {
                     segment.rto += self.rx_rto / 2;
                 }
+                segment.rto = min(segment.rto, 8 * self.rx_rto);
                 segment.resendts = current + segment.rto;
                 lost = true;
             } else if segment.fastack >= resent {
@@ -738,7 +739,6 @@ impl KCP {
     }
 
     fn update_ack(&mut self, rtt: u32) {
-        let rto = 0u32;
         if self.rx_srtt == 0 {
             self.rx_srtt = rtt;
             self.rx_rttval = rtt / 2;
