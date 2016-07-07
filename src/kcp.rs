@@ -1,9 +1,6 @@
-#![allow(dead_code)]
-#![allow(unused_assignments)]
-
 use segment::Segment;
 use std::collections::VecDeque;
-use buf::ByteBuffer;
+use fixbuf::ByteBuffer;
 use std::{i32, u32};
 use std::cmp::{min, max};
 /// all time value is milliseconds

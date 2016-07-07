@@ -14,6 +14,5 @@ repository = "https://github.com/freedomio/kcp.rs.git"
 readme = "README.md"
 keywords = ["kcp", "tcp", "fast", "freedomio"]
 
-
 [dependencies]
-byteorder = "0.3.0"
+fixbuf = { git = "https://github.com/freedomio/fixbuf" }

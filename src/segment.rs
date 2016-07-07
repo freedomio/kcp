@@ -1,5 +1,4 @@
-#![allow(dead_code)]
-use buf::ByteBuffer;
+use fixbuf::ByteBuffer;
 
 #[derive(Default, Debug)]
 pub struct Segment {

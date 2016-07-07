@@ -1,4 +1,3 @@
-extern crate byteorder;
+extern crate fixbuf;
 pub mod kcp;
-pub mod buf;
 mod segment;
