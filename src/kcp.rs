@@ -868,10 +868,16 @@ mod tests {
     }
 
     fn udp_output1(buf: &mut ByteBuffer, size: usize) {
-        // vnet.send(0, buf, size);
+        unsafe {
+            vnet.send(0, buf, size as isize);
+        }
+
     }
     fn udp_output2(buf: &mut ByteBuffer, size: usize) {
-        // vnet.send(1, buf, size);
+        unsafe {
+            vnet.send(1, buf, size as isize);
+        }
+
     }
 
     unsafe fn test(mode: isize) {
@@ -906,9 +912,9 @@ mod tests {
             kcp1.no_delay(1, 10, 2, 1);
             kcp2.no_delay(1, 10, 2, 1);
         }
-        let buffer: ByteBuffer = ByteBuffer::with_capacity(2000);
-        let hr: i32;
-        let ts1 = iclock();
+        let mut buffer: ByteBuffer = ByteBuffer::with_capacity(2000);
+        let mut hr: i32;
+        let mut ts1 = iclock();
         loop {
             thread::sleep(Duration::from_millis(100));
             current = iclock() as u32;
@@ -925,12 +931,66 @@ mod tests {
             }
             // 处理虚拟网络：检测是否有udp包从p1->p2
             loop {
-                hr = vnet.recv(1, buffer, 2000);
+                hr = vnet.recv(1, &mut buffer, 2000) as i32;
                 if hr < 0 {
                     break;
                 }
-                kcp2.input(buffer.ge)
+                kcp2.input(&mut buffer);
+            }
+            // 处理虚拟网络：检测是否有udp包从p2->p1
+            loop {
+                hr = vnet.recv(0, &mut buffer, 2000) as i32;
+                if hr < 0 {
+                    break;
+                }
+                kcp1.input(&mut buffer);
+            }
+            // kcp2接收到任何包都返回回去
+            loop {
+                hr = kcp2.recv(&mut buffer) as i32;
+                if hr < 0 {
+                    break;
+                }
+                kcp2.send(&mut buffer);
+            }
+            // kcp1收到kcp2的回射数据
+            loop {
+                hr = kcp1.recv(&mut buffer) as i32;
+                if hr < 0 {
+                    break;
+                }
+                let sn = buffer.read_u32().unwrap();
+                let ts = buffer.read_u32().unwrap();
+                let rtt = current - ts;
+
+                if sn != next {
+                    println!("ERROR sn {} <-> {}, {}", count, next, sn);
+                    return;
+                }
+                next += 1;
+                sumrtt += rtt;
+                count += 1;
+                if rtt > maxrtt {
+                    maxrtt = rtt;
+                }
+                println!("[RECV] mode = {} sn = {} rtt = {}", mode, sn, rtt);
+            }
+            if next > 100 {
+                break;
             }
         }
+        ts1 = iclock() - ts1;
+        let names = &["default", "normal", "fast"];
+        println!("{} mode result {}", names[mode as usize], ts1);
+        println!("avgrtt = {} max rtt = {}", (sumrtt / count), maxrtt);
+    }
+    #[test]
+    fn test_network() {
+        unsafe {
+            test(0);
+            test(1);
+            test(2);
+        }
+
     }
 }
