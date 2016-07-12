@@ -25,11 +25,11 @@ impl Segment {
         Segment { data: vec![0;cap], ..Default::default() }
     }
 
-	pub fn from_bytes(bytes: &[u8]) -> Self {
-		let mut seg = Segment::new();
-		seg.data = Vec::from(bytes);
-		seg
-	}
+    pub fn from_bytes(bytes: &[u8]) -> Self {
+        let mut seg = Segment::new();
+        seg.data = Vec::from(bytes);
+        seg
+    }
 
     pub fn encode(&self, buf: &mut ByteBuffer) {
         buf.write_u32(self.conv).unwrap();
@@ -45,17 +45,4 @@ impl Segment {
     pub fn data_bytes(&self) -> Vec<u8> {
         self.data.to_vec()
     }
-}
-
-#[test]
-pub fn test_segment_encode() {
-    // let mut seg = Segment { data: Some(ByteBuf::mut_with_capacity(100)), ..Default::default() };
-    let mut seg: Segment = Default::default();
-    seg.write_bytes(&[8, 8, 8, 8]);
-    seg.conv = 4;
-    let mut buf = ByteBuffer::new();
-    seg.encode(&mut buf);
-    println!("{:?}", buf.to_bytes());
-    assert!(buf.to_bytes() ==
-            [0, 0, 0, 4, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 4]);
 }
