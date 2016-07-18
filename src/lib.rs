@@ -1,5 +1,4 @@
 extern crate fixbuf;
-extern crate time;
-extern crate rand;
 pub mod kcp;
+pub use kcp::KCP;
 mod segment;

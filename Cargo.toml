@@ -15,6 +15,10 @@ readme = "README.md"
 keywords = ["kcp", "tcp", "fast", "freedomio"]
 
 [dependencies]
-fixbuf = { git = "https://github.com/freedomio/fixbuf" }
+fixbuf = { git = "https://github.com/freedomio/fixbuf", rev = "03e038da5f" }
 time = "0.1"
 rand = "0.3"
+
+[[test]]
+name = "test"
+path = "test/mod.rs"

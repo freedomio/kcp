@@ -21,10 +21,6 @@ impl Segment {
         Default::default()
     }
 
-    pub fn with_capacity_zeroed(cap: usize) -> Self {
-        Segment { data: vec![0;cap], ..Default::default() }
-    }
-
     pub fn from_bytes(bytes: &[u8]) -> Self {
         let mut seg = Segment::new();
         seg.data = Vec::from(bytes);
